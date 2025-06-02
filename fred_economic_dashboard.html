@@ -287,7 +287,73 @@
 
         let charts = {};
 
-        // Fetch data from FRED API via CORS proxy
+        // Cache management
+        const CACHE_KEY_PREFIX = 'fred_data_';
+        const CACHE_TIMESTAMP_KEY = 'fred_cache_timestamp_';
+        const CACHE_EXPIRY_HOURS = 24; // Cache expires after 24 hours
+
+        // Save data to localStorage
+        function saveToCache(key, data) {
+            try {
+                localStorage.setItem(CACHE_KEY_PREFIX + key, JSON.stringify(data));
+                localStorage.setItem(CACHE_TIMESTAMP_KEY + key, Date.now().toString());
+                console.log(`Cached data for ${key}`);
+            } catch (error) {
+                console.warn('Failed to save to cache:', error);
+            }
+        }
+
+        // Load data from localStorage
+        function loadFromCache(key) {
+            try {
+                const data = localStorage.getItem(CACHE_KEY_PREFIX + key);
+                const timestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY + key);
+                
+                if (!data || !timestamp) {
+                    return null;
+                }
+
+                // Check if cache is expired
+                const cacheAge = Date.now() - parseInt(timestamp);
+                const cacheExpiryMs = CACHE_EXPIRY_HOURS * 60 * 60 * 1000;
+                
+                if (cacheAge > cacheExpiryMs) {
+                    console.log(`Cache expired for ${key}`);
+                    return null;
+                }
+
+                console.log(`Loaded cached data for ${key}`);
+                return JSON.parse(data);
+            } catch (error) {
+                console.warn('Failed to load from cache:', error);
+                return null;
+            }
+        }
+
+        // Clear old cache entries
+        function clearExpiredCache() {
+            try {
+                const keys = Object.keys(localStorage);
+                keys.forEach(key => {
+                    if (key.startsWith(CACHE_TIMESTAMP_KEY)) {
+                        const indicatorKey = key.replace(CACHE_TIMESTAMP_KEY, '');
+                        const timestamp = localStorage.getItem(key);
+                        const cacheAge = Date.now() - parseInt(timestamp);
+                        const cacheExpiryMs = CACHE_EXPIRY_HOURS * 60 * 60 * 1000;
+                        
+                        if (cacheAge > cacheExpiryMs) {
+                            localStorage.removeItem(key);
+                            localStorage.removeItem(CACHE_KEY_PREFIX + indicatorKey);
+                            console.log(`Cleared expired cache for ${indicatorKey}`);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.warn('Failed to clear expired cache:', error);
+            }
+        }
+
+        // Fetch data from FRED API via CORS proxy with caching
         async function fetchFredData(seriesId, limit = 50) {
             try {
                 const fredUrl = `${FRED_BASE_URL}/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&limit=${limit}&sort_order=desc`;
@@ -315,10 +381,21 @@
                 const validData = data.observations
                     .filter(obs => obs.value !== '.' && !isNaN(parseFloat(obs.value)))
                     .reverse();
+                
+                // Save successful fetch to cache
+                saveToCache(seriesId, validData);
                     
                 return validData;
             } catch (error) {
                 console.error(`Error fetching ${seriesId}:`, error);
+                
+                // Try to load from cache as fallback
+                const cachedData = loadFromCache(seriesId);
+                if (cachedData) {
+                    console.log(`Using cached data for ${seriesId}`);
+                    return cachedData;
+                }
+                
                 throw error;
             }
         }
@@ -442,6 +519,12 @@
                     errorMsg += ' Please get a free FRED API key at https://fred.stlouisfed.org/docs/api/api_key.html and replace YOUR_API_KEY_HERE in the code.';
                 } else {
                     errorMsg += ` ${error.message}`;
+                    
+                    // Check if we have any cached data to mention
+                    const cachedData = loadFromCache(config.seriesId);
+                    if (cachedData) {
+                        errorMsg += ' (Note: Cached data was used if available)';
+                    }
                 }
                 errorEl.textContent = errorMsg;
             }
@@ -466,6 +549,9 @@
 
         // Initialize the dashboard
         document.addEventListener('DOMContentLoaded', function() {
+            // Clear expired cache on startup
+            clearExpiredCache();
+            
             loadAllData();
             
             // Auto-refresh every 5 minutes
