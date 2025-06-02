@@ -312,10 +312,10 @@
     </div>
 
     <script>
-        // FRED API configuration with CORS proxy
-        const FRED_API_KEY = 'd242e76b770f7b3f544e85f1e00cb746'; // Get free key at https://fred.stlouisfed.org/docs/api/api_key.html
-        const FRED_BASE_URL = 'https://api.stlouisfed.org/fred';
-        const CORS_PROXY = 'https://api.allorigins.win/raw?url='; // Free CORS proxy
+        // FRED API configuration - using CORS proxy to bypass browser restrictions
+        const FRED_API_KEY = 'd242e76b770f7b3f544e85f1e00cb746'; // Your FRED API key
+        const FRED_BASE_URL = 'https://api.stlouisfed.org/fred'; // Base URL for FRED API
+        const CORS_PROXY = 'https://api.allorigins.win/raw?url='; // Free CORS proxy service
         
         // Configuration object defining which economic indicators to display
         // Each indicator has metadata needed for API calls and display
