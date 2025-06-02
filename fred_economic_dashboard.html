@@ -175,6 +175,9 @@
         <div class="header">
             <h1>📊 Economic Dashboard</h1>
             <p>Live data from Federal Reserve Economic Data (FRED)</p>
+            <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem;">
+                💡 <strong>Setup:</strong> Get your free FRED API key at <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" style="color: #fff; text-decoration: underline;">fred.stlouisfed.org</a> and replace "YOUR_API_KEY_HERE" in the code
+            </div>
         </div>
 
         <div class="dashboard-grid">
@@ -249,101 +252,75 @@
     </div>
 
     <script>
-        // Using public APIs that don't require keys and work with CORS
+        // FRED API configuration with CORS proxy
+        const FRED_API_KEY = 'd242e76b770f7b3f544e85f1e00cb746'; // Get free key at https://fred.stlouisfed.org/docs/api/api_key.html
+        const FRED_BASE_URL = 'https://api.stlouisfed.org/fred';
+        const CORS_PROXY = 'https://api.allorigins.win/raw?url='; // Free CORS proxy
         
-        // Economic indicators configuration with sample data
+        // Economic indicators configuration
         const indicators = {
             unemployment: {
+                seriesId: 'UNRATE',
                 name: 'Unemployment Rate',
                 unit: '%',
-                color: '#e53e3e',
-                apiUrl: 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/rates_of_exchange?limit=50'
+                color: '#e53e3e'
             },
             ffr: {
+                seriesId: 'FEDFUNDS',
                 name: 'Federal Funds Rate',
                 unit: '%',
-                color: '#3182ce',
-                mockData: true
+                color: '#3182ce'
             },
             gdp: {
-                name: 'GDP Growth',
+                seriesId: 'A191RL1Q225SBEA', // Real GDP growth rate
+                name: 'GDP Growth Rate',
                 unit: '%',
-                color: '#38a169',
-                mockData: true
+                color: '#38a169'
             },
             cpi: {
+                seriesId: 'CPIAUCSL',
                 name: 'Consumer Price Index',
                 unit: 'Index',
-                color: '#d69e2e',
-                mockData: true
+                color: '#d69e2e'
             }
         };
 
         let charts = {};
 
-        // Generate realistic mock data for demonstration
-        function generateMockData(baseValue, volatility = 0.5, trend = 0.01) {
-            const data = [];
-            const startDate = new Date();
-            startDate.setMonth(startDate.getMonth() - 24); // 2 years of data
-            
-            let currentValue = baseValue;
-            
-            for (let i = 0; i < 24; i++) {
-                const date = new Date(startDate);
-                date.setMonth(date.getMonth() + i);
+        // Fetch data from FRED API via CORS proxy
+        async function fetchFredData(seriesId, limit = 50) {
+            try {
+                const fredUrl = `${FRED_BASE_URL}/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&limit=${limit}&sort_order=desc`;
+                const proxyUrl = `${CORS_PROXY}${encodeURIComponent(fredUrl)}`;
                 
-                // Add some realistic fluctuation
-                const randomChange = (Math.random() - 0.5) * volatility;
-                const trendChange = trend * i;
-                currentValue = baseValue + trendChange + randomChange;
+                console.log(`Fetching ${seriesId}...`);
                 
-                data.push({
-                    date: date.toISOString().split('T')[0],
-                    value: currentValue.toFixed(2)
-                });
-            }
-            
-            return data;
-        }
-
-        // Fetch economic data (mix of real APIs and mock data for demo)
-        async function fetchEconomicData(key) {
-            const config = indicators[key];
-            
-            if (config.mockData) {
-                // Generate realistic mock data based on indicator type
-                let baseValue, volatility, trend;
+                const response = await fetch(proxyUrl);
                 
-                switch (key) {
-                    case 'ffr':
-                        baseValue = 5.25;
-                        volatility = 0.5;
-                        trend = -0.02;
-                        break;
-                    case 'gdp':
-                        baseValue = 2.4;
-                        volatility = 0.8;
-                        trend = 0.01;
-                        break;
-                    case 'unemployment':
-                        baseValue = 3.8;
-                        volatility = 0.3;
-                        trend = 0.02;
-                        break;
-                    case 'cpi':
-                        baseValue = 310.5;
-                        volatility = 2.0;
-                        trend = 0.3;
-                        break;
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                return generateMockData(baseValue, volatility, trend);
+                const data = await response.json();
+                
+                if (data.error_code) {
+                    throw new Error(`FRED API Error: ${data.error_message}`);
+                }
+                
+                if (!data.observations || data.observations.length === 0) {
+                    throw new Error('No data available');
+                }
+                
+                // Filter out missing values and reverse to chronological order
+                const validData = data.observations
+                    .filter(obs => obs.value !== '.' && !isNaN(parseFloat(obs.value)))
+                    .reverse();
+                    
+                return validData;
+            } catch (error) {
+                console.error(`Error fetching ${seriesId}:`, error);
+                throw error;
             }
-            
-            // For real APIs, we'd fetch here
-            // This is a placeholder for when you get API keys
-            return generateMockData(100, 5, 0.1);
         }
 
         // Create or update chart
@@ -430,10 +407,7 @@
                 dataEl.style.display = 'none';
                 errorEl.style.display = 'none';
 
-                // Simulate loading delay for realism
-                await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
-                
-                const data = await fetchEconomicData(key);
+                const data = await fetchFredData(config.seriesId);
                 
                 if (data.length < 2) {
                     throw new Error('Insufficient data received');
@@ -461,7 +435,15 @@
                 console.error(`Error loading ${key}:`, error);
                 loadingEl.style.display = 'none';
                 errorEl.style.display = 'block';
-                errorEl.textContent = `Failed to load ${config.name} data. ${error.message}`;
+                
+                // Show helpful error message
+                let errorMsg = `Failed to load ${config.name} data.`;
+                if (error.message.includes('YOUR_API_KEY_HERE')) {
+                    errorMsg += ' Please get a free FRED API key at https://fred.stlouisfed.org/docs/api/api_key.html and replace YOUR_API_KEY_HERE in the code.';
+                } else {
+                    errorMsg += ` ${error.message}`;
+                }
+                errorEl.textContent = errorMsg;
             }
         }
 
