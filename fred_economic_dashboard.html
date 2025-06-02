@@ -354,7 +354,7 @@
         }
 
         // Fetch data from FRED API via CORS proxy with caching
-        async function fetchFredData(seriesId, limit = 50) {
+        async function fetchFredDataWithCacheInfo(seriesId, limit = 50) {
             try {
                 const fredUrl = `${FRED_BASE_URL}/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&limit=${limit}&sort_order=desc`;
                 const proxyUrl = `${CORS_PROXY}${encodeURIComponent(fredUrl)}`;
@@ -385,7 +385,7 @@
                 // Save successful fetch to cache
                 saveToCache(seriesId, validData);
                     
-                return validData;
+                return { data: validData, isFromCache: false };
             } catch (error) {
                 console.error(`Error fetching ${seriesId}:`, error);
                 
@@ -393,7 +393,7 @@
                 const cachedData = loadFromCache(seriesId);
                 if (cachedData) {
                     console.log(`Using cached data for ${seriesId}`);
-                    return cachedData;
+                    return { data: cachedData, isFromCache: true };
                 }
                 
                 throw error;
@@ -401,7 +401,7 @@
         }
 
         // Create or update chart
-        function createChart(canvasId, data, config) {
+        function createChart(canvasId, data, config, isFromCache = false) {
             const ctx = document.getElementById(canvasId).getContext('2d');
             
             // Destroy existing chart if it exists
@@ -419,11 +419,12 @@
                     datasets: [{
                         label: config.name,
                         data: values,
-                        borderColor: config.color,
-                        backgroundColor: config.color + '20',
-                        borderWidth: 2,
+                        borderColor: isFromCache ? config.color + '80' : config.color, // More transparent if cached
+                        backgroundColor: (isFromCache ? config.color + '10' : config.color + '20'),
+                        borderWidth: isFromCache ? 1.5 : 2, // Thinner line if cached
                         fill: true,
-                        tension: 0.4
+                        tension: 0.4,
+                        borderDash: isFromCache ? [5, 5] : [] // Dashed line if cached
                     }]
                 },
                 options: {
@@ -432,6 +433,13 @@
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    return isFromCache ? '(Cached data)' : '';
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -458,6 +466,25 @@
                     }
                 }
             });
+
+            // Add watermark annotation if using cached data
+            if (isFromCache) {
+                const chartArea = charts[canvasId].chartArea;
+                const canvas = charts[canvasId].canvas;
+                const ctx = canvas.getContext('2d');
+                
+                // Add annotation after chart renders
+                charts[canvasId].options.plugins.afterDraw = function(chart) {
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.globalAlpha = 0.3;
+                    ctx.fillStyle = config.color;
+                    ctx.font = '12px sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.fillText('Cached Data', chart.chartArea.right - 10, chart.chartArea.top + 20);
+                    ctx.restore();
+                };
+            }
         }
 
         // Calculate percentage change
@@ -484,7 +511,9 @@
                 dataEl.style.display = 'none';
                 errorEl.style.display = 'none';
 
-                const data = await fetchFredData(config.seriesId);
+                const result = await fetchFredDataWithCacheInfo(config.seriesId);
+                const data = result.data;
+                const isFromCache = result.isFromCache;
                 
                 if (data.length < 2) {
                     throw new Error('Insufficient data received');
@@ -494,16 +523,34 @@
                 const previous = parseFloat(data[data.length - 2].value);
                 const change = calculateChange(latest, previous);
 
-                // Update display
-                document.getElementById(`${key}-value`).textContent = 
-                    `${latest.toFixed(2)}${config.unit === '%' ? '%' : ''}`;
+                // Update display with cache indicator
+                const valueText = `${latest.toFixed(2)}${config.unit === '%' ? '%' : ''}`;
+                const valueEl = document.getElementById(`${key}-value`);
+                valueEl.textContent = valueText;
+                
+                // Add subtle visual indicator for cached data
+                if (isFromCache) {
+                    valueEl.style.opacity = '0.8';
+                    valueEl.title = 'This data is from cache (not current)';
+                } else {
+                    valueEl.style.opacity = '1';
+                    valueEl.title = '';
+                }
                 
                 const changeEl = document.getElementById(`${key}-change`);
                 changeEl.textContent = formatChange(change);
                 changeEl.className = `indicator-change ${change >= 0 ? 'positive' : 'negative'}`;
+                
+                if (isFromCache) {
+                    changeEl.style.opacity = '0.8';
+                    changeEl.title = 'Based on cached data';
+                } else {
+                    changeEl.style.opacity = '1';
+                    changeEl.title = '';
+                }
 
-                // Create chart
-                createChart(`${key}-chart`, data, config);
+                // Create chart with cache indicator
+                createChart(`${key}-chart`, data, config, isFromCache);
 
                 loadingEl.style.display = 'none';
                 dataEl.style.display = 'block';
