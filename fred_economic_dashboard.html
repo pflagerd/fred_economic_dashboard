@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FRED Economic Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .card h3 {
+            color: #4a5568;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .indicator-value {
+            font-size: 2.2rem;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .indicator-change {
+            font-size: 0.9rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .positive {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .negative {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100px;
+            color: #666;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .refresh-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 20px auto;
+            display: block;
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .error {
+            color: #e53e3e;
+            background: #fed7d7;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .timestamp {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Economic Dashboard</h1>
+            <p>Live data from Federal Reserve Economic Data (FRED)</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>🎯 Unemployment Rate</h3>
+                <div id="unemployment-loading" class="loading">
+                    <div class="spinner"></div>
+                    Loading...
+                </div>
+                <div id="unemployment-data" style="display: none;">
+                    <div class="indicator-value" id="unemployment-value">--</div>
+                    <div class="indicator-change" id="unemployment-change">--</div>
+                    <div class="chart-container">
+                        <canvas id="unemployment-chart"></canvas>
+                    </div>
+                </div>
+                <div id="unemployment-error" class="error" style="display: none;"></div>
+            </div>
+
+            <div class="card">
+                <h3>💰 Federal Funds Rate</h3>
+                <div id="ffr-loading" class="loading">
+                    <div class="spinner"></div>
+                    Loading...
+                </div>
+                <div id="ffr-data" style="display: none;">
+                    <div class="indicator-value" id="ffr-value">--</div>
+                    <div class="indicator-change" id="ffr-change">--</div>
+                    <div class="chart-container">
+                        <canvas id="ffr-chart"></canvas>
+                    </div>
+                </div>
+                <div id="ffr-error" class="error" style="display: none;"></div>
+            </div>
+
+            <div class="card">
+                <h3>📈 GDP Growth Rate</h3>
+                <div id="gdp-loading" class="loading">
+                    <div class="spinner"></div>
+                    Loading...
+                </div>
+                <div id="gdp-data" style="display: none;">
+                    <div class="indicator-value" id="gdp-value">--</div>
+                    <div class="indicator-change" id="gdp-change">--</div>
+                    <div class="chart-container">
+                        <canvas id="gdp-chart"></canvas>
+                    </div>
+                </div>
+                <div id="gdp-error" class="error" style="display: none;"></div>
+            </div>
+
+            <div class="card">
+                <h3>🏠 Consumer Price Index</h3>
+                <div id="cpi-loading" class="loading">
+                    <div class="spinner"></div>
+                    Loading...
+                </div>
+                <div id="cpi-data" style="display: none;">
+                    <div class="indicator-value" id="cpi-value">--</div>
+                    <div class="indicator-change" id="cpi-change">--</div>
+                    <div class="chart-container">
+                        <canvas id="cpi-chart"></canvas>
+                    </div>
+                </div>
+                <div id="cpi-error" class="error" style="display: none;"></div>
+            </div>
+        </div>
+
+        <button class="refresh-btn" onclick="loadAllData()">🔄 Refresh Data</button>
+        
+        <div class="timestamp" id="timestamp"></div>
+    </div>
+
+    <script>
+        // FRED API configuration
+        const FRED_API_KEY = 'demo'; // Using demo key - replace with your own for production
+        const FRED_BASE_URL = 'https://api.stlouisfed.org/fred';
+        
+        // Economic indicators configuration
+        const indicators = {
+            unemployment: {
+                seriesId: 'UNRATE',
+                name: 'Unemployment Rate',
+                unit: '%',
+                color: '#e53e3e'
+            },
+            ffr: {
+                seriesId: 'FEDFUNDS',
+                name: 'Federal Funds Rate',
+                unit: '%',
+                color: '#3182ce'
+            },
+            gdp: {
+                seriesId: 'GDP',
+                name: 'GDP',
+                unit: 'Billions',
+                color: '#38a169'
+            },
+            cpi: {
+                seriesId: 'CPIAUCSL',
+                name: 'Consumer Price Index',
+                unit: 'Index',
+                color: '#d69e2e'
+            }
+        };
+
+        let charts = {};
+
+        // Fetch data from FRED API
+        async function fetchFredData(seriesId, limit = 50) {
+            try {
+                const response = await fetch(
+                    `${FRED_BASE_URL}/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&limit=${limit}&sort_order=desc`
+                );
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return data.observations.reverse(); // Reverse to get chronological order
+            } catch (error) {
+                console.error(`Error fetching ${seriesId}:`, error);
+                throw error;
+            }
+        }
+
+        // Create or update chart
+        function createChart(canvasId, data, config) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            const dates = data.map(d => new Date(d.date).toLocaleDateString());
+            const values = data.map(d => parseFloat(d.value));
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: config.name,
+                        data: values,
+                        borderColor: config.color,
+                        backgroundColor: config.color + '20',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 6
+                            }
+                        }
+                    },
+                    elements: {
+                        point: {
+                            radius: 0,
+                            hoverRadius: 4
+                        }
+                    }
+                }
+            });
+        }
+
+        // Calculate percentage change
+        function calculateChange(current, previous) {
+            if (!previous || previous === 0) return 0;
+            return ((current - previous) / previous * 100);
+        }
+
+        // Format change display
+        function formatChange(change) {
+            const sign = change >= 0 ? '+' : '';
+            return `${sign}${change.toFixed(2)}%`;
+        }
+
+        // Load data for a specific indicator
+        async function loadIndicatorData(key) {
+            const config = indicators[key];
+            const loadingEl = document.getElementById(`${key}-loading`);
+            const dataEl = document.getElementById(`${key}-data`);
+            const errorEl = document.getElementById(`${key}-error`);
+
+            try {
+                loadingEl.style.display = 'flex';
+                dataEl.style.display = 'none';
+                errorEl.style.display = 'none';
+
+                const data = await fetchFredData(config.seriesId);
+                
+                if (data.length < 2) {
+                    throw new Error('Insufficient data received');
+                }
+
+                const latest = parseFloat(data[data.length - 1].value);
+                const previous = parseFloat(data[data.length - 2].value);
+                const change = calculateChange(latest, previous);
+
+                // Update display
+                document.getElementById(`${key}-value`).textContent = 
+                    `${latest.toFixed(2)}${config.unit === '%' ? '%' : ''}`;
+                
+                const changeEl = document.getElementById(`${key}-change`);
+                changeEl.textContent = formatChange(change);
+                changeEl.className = `indicator-change ${change >= 0 ? 'positive' : 'negative'}`;
+
+                // Create chart
+                createChart(`${key}-chart`, data, config);
+
+                loadingEl.style.display = 'none';
+                dataEl.style.display = 'block';
+
+            } catch (error) {
+                console.error(`Error loading ${key}:`, error);
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.textContent = `Failed to load ${config.name} data. ${error.message}`;
+            }
+        }
+
+        // Load all data
+        async function loadAllData() {
+            console.log('Loading economic data...');
+            document.getElementById('timestamp').textContent = 
+                `Last updated: ${new Date().toLocaleString()}`;
+
+            // Load all indicators in parallel
+            const promises = Object.keys(indicators).map(key => loadIndicatorData(key));
+            
+            try {
+                await Promise.allSettled(promises);
+                console.log('All data loaded');
+            } catch (error) {
+                console.error('Error loading data:', error);
+            }
+        }
+
+        // Initialize the dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAllData();
+            
+            // Auto-refresh every 5 minutes
+            setInterval(loadAllData, 5 * 60 * 1000);
+        });
+    </script>
+</body>
+</html>
